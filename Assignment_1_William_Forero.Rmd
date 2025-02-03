@@ -1,0 +1,104 @@
+---
+title: "Assignment_1_William_Forero"
+author: "William Forero"
+date: "2025-02-02"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary of the data 
+The article focusses on survey results regarding the different factors that may potentially play a role in someones choice to vote durng elections. Factors span from their feelings towards the importance/impact of their vote to whether there were barriers preventing them from voting, such as, being able to take time from work. 
+
+Link to the article: https://projects.fivethirtyeight.com/non-voters-poll-2020-election/ 
+
+## Loading the libraries and data
+
+```{r}
+library(tidyverse)
+library(openintro)
+
+nonvoter_data <- read.csv("Data/nonvoters_data.csv")
+```
+
+## View the dataframe
+
+It is important getting to look at the data and becoming familiar with what information is included.
+
+```{r}
+view(nonvoter_data)
+```
+
+We see that there are 119 columns and 5,836 rows. We are only interested in a specific set of columns, in this case the demographic columns, and will remove the ones we do not need.
+
+## Subsetting the data
+
+There are some dempographic columns of particular interest that I would like to explore as they relate to how often someone votes.
+
+```{r}
+nonvoter_subset <- subset(nonvoter_data, select = c(RespId, ppage, educ, race, gender, income_cat, voter_category))
+
+view(nonvoter_subset)
+
+```
+
+## Visualizing Relationships
+
+Being able to visualize and summarize some of the relationships will help us draw some conclusions.
+
+First we look at the distribution of age among the voter categories. It appears that respondents higher in age represented more of the "always" and Sporadic", and younger repspondents "rarely/never".
+
+```{r}
+ggplot(nonvoter_subset, aes(x = voter_category, y = ppage)) +
+  geom_boxplot(aes(fill = voter_category)) + 
+  labs(x = "Voter Category", y = "Age", title = "Voter Frequency Distribution by Age ")
+```
+
+We can also consider if there is any difference in voting frequency by gender. From the charts we do not see a major difference between voting by gender. Women seem to vote more in general but there is not major difference. 
+
+```{r}
+ggplot(nonvoter_subset, aes(x = gender, fill = gender)) +
+  geom_bar() +
+  facet_wrap(~ voter_category) +
+  labs(title = "Voter Frequency by Gender")
+```
+
+We can also see if there was any pattern observed by the difference in race. One thing that we can take away is that of the most prevalent race among respondents was "White". They represented the higher count of those voting. 
+
+```{r}
+ggplot(nonvoter_subset, aes(x = race, fill = race)) +
+  geom_bar() +
+  facet_wrap(~ voter_category) +
+  labs(title = "Voter Frequency by Race") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Next, we take a look at whether income plays a role in the likelihood of someone voting. From the barplots, we can see that those with middle to higher income ($75k - $125k) tend to vote more. We also observe that those with lower income tend to rarely/never vote. This may be due to ability to take off of work to vote.
+
+```{r}
+ggplot(nonvoter_subset, aes(x = fct_infreq(income_cat), fill = income_cat)) +
+  geom_bar() +
+  facet_wrap(~ voter_category) +
+  labs(title = "Voter Frequency by Income",
+       x = "Income") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Respondents with higher levels of education tended to vote more and those with the lowest levels of education tended to "rarely/never" vote, this may have some correlation with income as well. 
+
+```{r}
+ggplot(nonvoter_subset, aes(x = fct_infreq(educ), fill = educ)) +
+  geom_bar() +
+  facet_wrap(~ voter_category) +
+  labs(title = "Voter Frequency by Education",
+       x = "Education") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## Conclusion
+
+The dataset gave us a nice overview of voter attributes. For further exploration and consideration it would be helpful to analyze the different sentiment related questions on how a voter feels about different voter related topics including whether they feel their votes matter. From the columsn used, we see that gender did not play a major role, but education, income, and race had some relationship that could be futher explored in regards to whether someone is more likely to vote or not. It may be good to consider what combination of these factors have significant impact on whether someone is likely to vote or not.
