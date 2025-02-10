@@ -58,10 +58,19 @@ user_id
 movie_id
 rating
 
+dbExecute(mydb, "DROP TABLE IF EXISTS ratings")
+dbExecute(mydb, "DROP TABLE IF EXISTS users")
+dbExecute(mydb, "DROP TABLE IF EXISTS movies")
+
 ```{r}
+# Allows the code to be run again without inserting duplicate entries
+dbExecute(mydb, "DROP TABLE IF EXISTS ratings")
+dbExecute(mydb, "DROP TABLE IF EXISTS users")
+dbExecute(mydb, "DROP TABLE IF EXISTS movies")
+
 # Create the users table
 dbExecute(mydb, "
-    CREATE TABLE users (
+    CREATE TABLE IF NOT EXISTS users (
         user_id INT PRIMARY KEY AUTO_INCREMENT,
         first_name VARCHAR(50),
         last_name VARCHAR(50)
@@ -70,7 +79,7 @@ dbExecute(mydb, "
 
 # Create movies table
 dbExecute(mydb, "
-    CREATE TABLE movies (
+    CREATE TABLE IF NOT EXISTS movies (
         movie_id INT PRIMARY KEY AUTO_INCREMENT,
         movie_name VARCHAR(255) UNIQUE
     )
@@ -78,7 +87,7 @@ dbExecute(mydb, "
 
 # Create ratings table
 dbExecute(mydb, "
-    CREATE TABLE ratings (
+    CREATE TABLE IF NOT EXISTS ratings (
         user_id INT,
         movie_id INT,
         rating INT,
