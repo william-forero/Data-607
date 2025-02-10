@@ -1,0 +1,202 @@
+---
+title: "Assignment_2_William_Forero"
+author: "William Forero"
+date: "2025-02-09"
+output: html_document
+---
+
+
+## Summary
+
+We are looking at the ratings of five movies. Respondents were given a google form to rate each movie from 1-5. If the respondent had not watched the movie they were asked to leave it blank. 
+
+## Libraries Used
+
+The libraries used throughout the assignment are shared below. Googlesheets was used to import the responses provided.
+
+```{r}
+library(tidyverse)
+library(DBI)
+library(dplyr)
+library(RMySQL)
+```
+
+Connecting my database
+```{r}
+mydb <- dbConnect(MySQL(),
+                  user = 'william.forero99', 
+                  password = '54e9f1ec38640291', 
+                  dbname = 'william.forero99', 
+                  host = 'cuny607sql.mysql.database.azure.com')
+```
+
+## Loading the responses
+
+We will load the responses of the google survey from the associated google sheets that was created and placed on github
+```{r}
+response_url <- 'https://raw.githubusercontent.com/william-forero/Data-607/main/Movie_Ratings.csv'
+response_data <- read.csv(response_url)
+
+summary(response_data)
+```
+We have 13 responses, not all movies have a rating for every response, which tells us that not all movies were watched by every respondent
+
+## Creating the tables to store the data
+
+Three tables were created to store this information, the intent of creating the three tables would be to achieve third normal form -
+users:
+user_id
+first_name
+last_name
+
+movies:
+movie_id
+movie_name
+
+ratings:
+user_id
+movie_id
+rating
+
+```{r}
+# Create the users table
+dbExecute(mydb, "
+    CREATE TABLE users (
+        user_id INT PRIMARY KEY AUTO_INCREMENT,
+        first_name VARCHAR(50),
+        last_name VARCHAR(50)
+    )
+")
+
+# Create movies table
+dbExecute(mydb, "
+    CREATE TABLE movies (
+        movie_id INT PRIMARY KEY AUTO_INCREMENT,
+        movie_name VARCHAR(255) UNIQUE
+    )
+")
+
+# Create ratings table
+dbExecute(mydb, "
+    CREATE TABLE ratings (
+        user_id INT,
+        movie_id INT,
+        rating INT,
+        FOREIGN KEY (user_id) REFERENCES users(user_id),
+        FOREIGN KEY (movie_id) REFERENCES movies(movie_id)
+    )
+")
+
+```
+
+Now we insert the rows corresponding to the survey results. 
+
+```{r}
+# Inserting the users information
+dbExecute(mydb, "
+    INSERT INTO users (first_name, last_name) VALUES 
+    ('Torren', 'Jarvis '), 
+    ('Kalleen', 'Marte'), 
+    ('Orlando', 'G'), 
+    ('Edwin', 'Edouard'), 
+    ('Rene', 'J'), 
+    ('Paul', 'Daley'), 
+    ('Dorrelle', 'Caine'), 
+    ('Richard', 'Aguilar Navarrette'), 
+    ('Zulfiqar', 'Soomro'), 
+    ('Brexnak', 'Rojas'), 
+    ('Ben', 'Lawrence'), 
+    ('Marcia', 'Hernandez'), 
+    ('Melissa', 'Baez')
+")
+
+# Inserting the movies information
+dbExecute(mydb, "
+    INSERT INTO movies (movie_name) VALUES 
+    ('Borderlands'),
+    ('Moana 2'),
+    ('Mufasa The Lion King'),
+    ('Venom The Last Dance'),
+    ('Wicked')
+")
+
+# Inserting the responses into ratings
+dbExecute(mydb, "
+    INSERT INTO ratings (user_id, movie_id, rating) VALUES 
+    (1, 1, 1), 
+    (1, 2, 3), 
+    (1, 3, 3), 
+    (1, 4, 3), 
+    (1, 5, 1), 
+    (2, 1, 2), 
+    (2, 2, 4), 
+    (2, 3, 3), 
+    (2, 4, 3), 
+    (2, 5, 4), 
+    (3, 2, 3), 
+    (3, 3, 2), 
+    (3, 4, 4), 
+    (3, 5, 3), 
+    (4, 1, 1), 
+    (4, 2, 4), 
+    (4, 3, 4), 
+    (4, 4, 4), 
+    (4, 5, 2), 
+    (6, 1, 5), 
+    (6, 2, 3), 
+    (6, 3, 4), 
+    (6, 4, 4), 
+    (6, 5, 3), 
+    (7, 1, 4), 
+    (7, 2, 3), 
+    (7, 3, 5), 
+    (7, 4, 4), 
+    (7, 5, 3), 
+    (8, 3, 3), 
+    (9, 1, 3), 
+    (9, 2, 1), 
+    (9, 3, 2), 
+    (9, 4, 3), 
+    (9, 5, 3), 
+    (10, 1, 4), 
+    (10, 2, 5), 
+    (10, 3, 5), 
+    (10, 4, 4), 
+    (10, 5, 2), 
+    (11, 1, 1), 
+    (11, 2, 1), 
+    (11, 3, 4), 
+    (11, 4, 1), 
+    (11, 5, 1), 
+    (12, 2, 5), 
+    (12, 4, 5), 
+    (13, 3, 5)
+")
+
+```
+
+## Taking the data from MySQL and creating R dataframes
+
+Now that the tables were created and the responses loaded, lets create dataframes in R that represent the data.
+
+```{r}
+users_df <- dbGetQuery(mydb, "SELECT * FROM users")
+
+movies_df <- dbGetQuery(mydb, "SELECT * FROM movies")
+
+ratings_df <- dbGetQuery(mydb, "SELECT * FROM ratings")
+```
+
+Then we can join the three into a single dataframe
+
+```{r}
+responses_df <- ratings_df %>%
+    left_join(users_df, by = "user_id") %>%
+    left_join(movies_df, by = "movie_id")
+
+head(responses_df)
+```
+
+## Missing value treatment
+
+Not all respondednts viewed all 5 of the movies. When a rating was left blank, it was omitted from the final results. It was omitted because assigning a 0 value would not give an accurate representation. It can be mistaken as a very bad rating when in reality it was just no rating. Imputing a median or average rating to nulls also would not be an accurate representation as there was no rating from the respondednt which potentially reflects an underlying observation. That observation being that the respondednt may not have been interested in seeing the movie, which could speak to genre choices etc. 
