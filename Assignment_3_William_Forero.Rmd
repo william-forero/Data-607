@@ -1,0 +1,109 @@
+---
+title: "Assignment_3_William_Forero"
+author: "William Forero"
+date: "2025-02-16"
+output: html_document
+---
+```{r}
+library(tidyverse)
+library(openintro)
+```
+
+## Normalization
+
+
+1. Provide an example of at least three dataframes in R that demonstrate normalization. The dataframes can contain any data, either real or synthetic. Although normalization is typically done in SQL and relational databases, you are expected to show this example in R, as it is our main work environment in this course.
+Character Manipulation
+
+Below I have attempted to create 3 tables that achieve 3rd normal form for financial aid awards for students
+
+```{r}
+# Students Data Frame
+students <- data.frame(
+  student_id = c(1, 2, 3, 4, 5, 6),
+  first_name = c("Alice", "Bob", "Charlie", "Peter", "Tony", "Emily"),
+  last_name = c("Wunderland", "Dylan", "Chocolate", "Parker", "Stark", "Clarke"),
+  student_email = c("alice_w@aol.com", "bobby@yahoo.com", "charlie_chocolate@aol.com",
+                    "spidey@gmail.com", "iron_man@gmail.com", "Em_C@yahoo.com")
+)
+
+print(students)
+```
+
+```{r}
+# Awards Data Frame
+awards <- data.frame(
+  award_id = c(001, 002, 003, 004),
+  award_source = c("Federal", "State", "Institutional", "Private"),
+  award_type = c("Grant", "Grant", "Scholarhip", "Loan"),
+  award_name = c("Pell Grant", "TAP Grant", "Vallone Scholarship", "Wells Loan")
+)
+
+print(awards)
+```
+
+```{r}
+# Award Activity
+stdnt_award <- data.frame(
+  student_id = c(1, 1, 2, 3, 4, 5, 5, 6, 6, 6),
+  award_id = c(001, 002, 003, 002, 004, 001, 002, 001, 002, 003),
+  award_amt = c(2000.00, 506.50, 350.00, 2360.60, 10890.90, 
+                460.20, 3200.45, 1260.50, 450.00, 250.00),
+  award_date = c("2025-01-14", "2025-01-14", "2025-01-22", "2025-01-04", "2025-01-06", 
+                 "2025-01-08", "2025-02-03", "2025-02-04", "2025-02-10", "2025-02-12")
+)
+
+print(stdnt_award)
+```
+
+2. Using the 173 majors listed in fivethirtyeight.com’s College Majors dataset [https://fivethirtyeight.com/features/the-economic-guide-to-picking-a-college-major/], provide code that identifies the majors that contain either "DATA" or "STATISTICS"
+
+```{r}
+# Import the data from github and load into a dataframe
+majors_data <- read_csv('https://raw.githubusercontent.com/fivethirtyeight/data/refs/heads/master/college-majors/majors-list.csv')
+
+# Filter the majors for those that have "DATA" and/or "STATISTICS"
+filtered_majors <- majors_data |>
+  filter(str_detect(Major, "DATA|STATISTICS"))
+
+print(filtered_majors)
+```
+
+
+The two exercises below are taken from R for Data Science, 14.3.5.1 in the on-line version:
+
+3. Describe, in words, what these expressions will match:
+
+a) "(.)\1\1"
+
+The expression places a character into the capture group, then matches on strings that repeat the character from the first capture group, two more times consecutively such as "aaa" and "aaalex"
+
+b) "(.)(.)\\2\\1"
+
+This expression take a character and places it into the first capture group, then the next character into the second capture group and evaluates that the following character matches the character from group 2 and then group one, essentially it matches when the two characters are swapped such as "abba"
+
+c) "(..)\1"
+
+This expression takes two characters and stores them in the capture group then evaluates that the same two characters follow such as "abab"
+
+d) "(.).\\1.\\1"
+
+This expression takes a character and stores it into capture group 1, then followed by matching a character(any character), and then repeats the character from group 1, then another character, followed again by the same character from group 1, for example "abaca"
+
+e) "(.)(.)(.).*\\3\\2\\1"
+
+This expression takes a character and stores it to capture group 1, then the next character to capture group 2, and the following to capture group 3, it follows matching any number of characters before matching against the character from group 3, then group 2 then group 1.
+
+4. Construct regular expressions to match words that:
+
+a) Start and end with the same character.
+
+"^(.).*\\1$"
+
+b) Contain a repeated pair of letters (e.g. "church" contains "ch" repeated twice.)
+
+"(..).*\\1"
+
+c) Contain one letter repeated in at least three places (e.g. "eleven" contains three "e"s.)
+
+"(.).*\\1.*\\1"
