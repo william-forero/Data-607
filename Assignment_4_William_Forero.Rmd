@@ -1,0 +1,129 @@
+---
+title: "Assignment_4_William_Forero"
+author: "William Forero"
+date: "2025-02-24"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+```
+
+## There are three interrelated rules that make a dataset tidy:
+
+Each variable is a column; each column is a variable.
+Each observation is a row; each row is an observation.
+Each value is a cell; each cell is a single value.
+
+## Working With Un-Tidy Data
+
+### Import The Data
+
+(1) Create a .CSV file (or optionally, a MySQL database!) that includes all of the information above.  You’re encouraged to use a “wide” structure similar to how the information appears above, so that you can practice tidying and transformations as described below. 
+
+```{r}
+#Loading the CSV
+flights_csv <- read.csv("https://raw.githubusercontent.com/william-forero/Data-607/refs/heads/main/Untidy_Flight_Table.csv")
+
+head(flights_csv)
+```
+
+(2) Read the information from your .CSV file into R, and use tidyr and dplyr as needed to tidy and transform your data.   
+
+### Prepare the dataframe for pivoting
+
+There are some blank values in the original csv headers and rows. I first want to label those
+```{r}
+# Renaming the columns
+flights_csv <- flights_csv |>
+  rename(
+    Airline = X,
+    Flight_Status = X.1
+  )
+
+head(flights_csv)
+```
+
+There were also blank values in the Airline column. These values are not truly missing, we can infer which airline the corresponding Delayed values belong to.
+
+```{r}
+flights_csv[2,"Airline"] <- "Alaska"
+flights_csv[4,"Airline"] <- "AM West"
+
+head(flights_csv)
+```
+
+### Pivoting the data
+
+The different destinations can be considered a variable "Destination" and placed into one column. The resulting dataframe is tidy in that each variable is a column, each row is an observation and each cell is a single value.
+```{r}
+flights_tidy <- flights_csv |>
+  pivot_longer(
+    cols = !(Airline:Flight_Status), 
+    names_to = "Destination", 
+    values_to = "Count"
+  )
+
+head(flights_tidy)
+```
+
+If I want to treat the flight status of on time and delayed as separate variables I can make it wider, this is something I may want to use later on to view some data easier. I'll save it as a new dataframe
+
+```{r}
+flights_wide <- flights_tidy |> 
+  pivot_wider(
+    names_from = Flight_Status,
+    values_from = Count
+  ) |>
+  rename(
+    On_Time = `On Time`
+    )
+
+head(flights_wide)
+```
+
+
+## Analysis of Tidy Data
+(3) Perform analysis to compare the arrival delays for the two airlines. 
+
+### Visualizing the data
+
+Below we can see some general trends of delayed and on time flights with relative frequency across the two airlines and different destinations. We can see that generally flights to San Francisco have relatively more delayed flights and flights to Phoenix have less delayed flights.  
+```{r}
+ggplot(flights_tidy, 
+       aes(x = Destination, 
+           y = Count, 
+           fill = Flight_Status)) +
+  geom_bar(stat = 'identity', 
+           position = 'fill') +
+  facet_wrap(~Airline, 
+             ncol=1)
+```
+
+We can get a better idea by computing the percentage of delayed flights. It may be visually easier to use the wider dataframe from earlier.
+
+```{r}
+flights_wide <- flights_wide |>
+  mutate(Perc_Delayed = round((Delayed / (On_Time + Delayed)) * 100, 2))
+
+print(flights_wide)
+```
+From this we can see that the destination with the highest percentage of delays is San Francisco for both airlines. However, between the two AM West has a higher percentage of delayed flights to San Francisco.
+
+The destination with the lowest percentage of delays is also the same for both airlines, which is Phoneix but AM West again has the higher percentage of delayed flights to Phoenix between the two.
+
+We can try to view the delays by airline as a whole
+```{r}
+airline_summary <- flights_tidy |>
+  group_by(Airline) |>
+  summarise(
+    Nbr_OnTime = sum(Count[Flight_Status == "On Time"]),
+    Nbr_Delayed = sum(Count[Flight_Status == "Delayed"]),
+    Total_Flights = sum(Count)
+  ) |>
+  mutate(Perc_Delayed = round((Nbr_Delayed / Total_Flights) * 100,2))
+print(airline_summary)
+```
+Alaska airlines has a slightly higher overall percentage of delayed flights, but a lower overall number of flights in total. 
+
+(4) Your code should be in an R Markdown file, posted to rpubs.com, and should include narrative descriptions of your data cleanup work, analysis, and conclusions. 
