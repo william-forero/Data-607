@@ -1,0 +1,162 @@
+---
+title: "Data 607 - Project 1"
+author: "William Forero"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## Project Objective
+
+In this project, you’re given a text file with chess tournament results where the information has some structure. Your
+job is to create an R Markdown file that generates a .CSV file (that could for example be imported into a SQL database) with the following information for all of the players:
+
+Player’s Name, Player’s State, Total Number of Points, Player’s Pre-Rating, and Average Pre Chess Rating of Opponents
+
+For the first player, the information would be:
+Gary Hua, ON, 6.0, 1794, 1605
+
+1605 was calculated by using the pre-tournament opponents’ ratings of 1436, 1563, 1600, 1610, 1649, 1663, 1716, and
+dividing by the total number of games played.
+
+The chess rating system (invented by a Minnesota statistician named Arpad Elo) has been used in many other contexts,
+including assessing relative strength of employment candidates by human resource departments.
+
+```{r}
+library(tidyverse)
+library(stringr)
+library(dplyr)
+```
+
+
+## Importing The Data
+
+First we load the raw data from the text file and look at how it is structured.
+```{r}
+raw_tournament_data <- readLines("https://raw.githubusercontent.com/william-forero/Data-607/refs/heads/main/tournamentinfo.txt")
+
+head(raw_tournament_data,21)
+```
+We can see that there is a repetitive structure. 
+
+Each players information is split into two rows:
+Row 1 always begins with a number 
+Row 2 always begins with a letter
+
+Players are split by a row of "---"
+
+## Parsing The Data
+
+First I will remove the headers and any rows that are all '---'
+```{r}
+# Removing the lines consisting of all hyphens
+tournament_data <- raw_tournament_data[!str_detect(raw_tournament_data, "^-+$")]
+
+# Remove the headers
+tournament_data <- tournament_data[-(1:2)]
+
+head(tournament_data,10)
+```
+Next we parse out the two player row formats
+```{r}
+# Checking the first 7 characters of the row and determining if it has a number
+player_row_1 <- tournament_data[str_detect(str_sub(tournament_data, 1, 7), "[0-9]")]
+
+# Checking the first 7 characters of the row and determining if it has a letter
+player_row_2 <- tournament_data[str_detect(str_sub(tournament_data, 1, 7), "[A-Z]")]
+
+head(player_row_1)
+head(player_row_2)
+```
+Now we break each field out into its own column. The format will depend on the row type (row 1 or 2 of the players data)
+```{r}
+# First I split by the delimeter |
+player_row1_df <- read_delim(I(player_row_1),"|",trim_ws = TRUE, col_names = FALSE)
+
+# Rename the columns
+names(player_row1_df) <- c("pair_num","player_name","total_points",
+                           "round1","round2","round3","round4","round5",
+                           "round6","round7")
+
+player_row1_df <- player_row1_df |> select(-last_col())
+head(player_row1_df)
+
+```
+
+Next we parse out the rows of the second format
+```{r}
+# Parsing out the 2nd row of each players data
+player_row2_df <- data_frame(player_state = str_trim(substr(player_row_2, 1,  6), side="both"),
+                             uscf_id = substr(player_row_2, 8,  16),
+                             pre_rating = as.numeric(substr(player_row_2, 22, 26)),
+                             post_rating = as.numeric(substr(player_row_2, 32, 35))
+                             )
+                             
+
+head(player_row2_df)
+```
+
+Now we combine the two dfs and pivot longer
+```{r}
+# We combine the two data frames into one comprehensive player data frame
+full_player_data <- bind_cols(player_row1_df,player_row2_df)
+
+# Now we pivot longer so that the rounds become rows, we also split outcome and opponent
+player_data_long <- full_player_data |>
+  pivot_longer(
+    cols = starts_with("round"),
+    names_to = "round",
+    values_to = "round_result"
+  ) |>
+  extract(
+    round_result, 
+    into = c("rd_outcome", "rd_opponent"), 
+    regex = "([A-Z])\\s*(\\d+)"
+  ) |>
+  # This is used to remove round rows where the player did not have an opponent
+  filter(!is.na(rd_opponent)) |>
+  mutate(rd_opponent = as.numeric(rd_opponent))
+
+
+head(player_data_long)
+
+```
+
+We can create a column that provides the opponents pre-rating by first creating an intermediary table that contains the player id as well as the pre_rating.
+Once we have that we can join the opponents pre_rating onto the larger df to be used to calculate the average opponent pre-rating.
+```{r}
+# Creating an intermediary table to pull the opponents rating
+player_row1_subset <- player_row1_df |> select(1)
+player_row2_subset <- player_row2_df |> select(3)
+player_pre_ratings <- bind_cols(player_row1_subset,player_row2_subset)
+
+player_data_long <- player_data_long |>
+  left_join(player_pre_ratings, by = c("rd_opponent" = "pair_num")) |>
+  rename(`opp_pre_rating` = pre_rating.y) |>
+  rename(`pre_rating` = pre_rating.x)
+
+head(player_data_long)
+```
+
+Now we can extract the fields we want to provide in csv format
+```{r}
+# Calulate the average opponent rating
+final_player_results <- player_data_long |>
+group_by(pair_num,player_name, player_state, total_points, pre_rating) |>
+summarise(avg_opp_pre_rating = round(mean(opp_pre_rating, na.rm = TRUE)))
+
+print(final_player_results)
+```
+
+## Export to CSV
+
+Now that we have the data in the format that we want, we can export to a CSV file.
+```{r}
+write.csv(final_player_results, "tournamentinfo.csv")
+```
+
+
+
+
+
+
