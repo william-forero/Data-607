@@ -1,0 +1,235 @@
+---
+title: "Project 2.2"
+author: "Cindy Lin & William Forero"
+date: 
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## Emissions Data
+
+### Loading the data
+
+This dataset tracks emissions data by country from the years 2000 to 2020. The information was compiled from the United Nations Food and Agriculture Organization and uploaded to Kaggle for use. Emissions from CH4, N20, CO2, and CO2 equivalents. 
+source: https://www.kaggle.com/datasets/justin2028/total-emissions-per-country-2000-2020?resource=download 
+
+For additional analysis, I have included population by country which I downloaded from World Bank Group.
+source: https://data.worldbank.org/indicator/SP.POP.TOTL?end=2020&start=2000 
+
+To begin we will download the csv file, and take a look at its current structure.
+
+```{r cars}
+library(tidyverse)
+library(dplyr)
+
+emiss_raw <- read.csv("https://raw.githubusercontent.com/william-forero/Data-607/refs/heads/main/Total%20Emissions%20Per%20Country%20(2000-2020).csv", check.names = FALSE)
+
+head(emiss_raw)
+
+```
+
+We can see that the different years recorded have been put into different columns. The dataset is wide because of it. The dataset is untidy in structure because when new data is recorded you will need to add a column for each new year.
+
+### Re-arranging the data
+
+We want to re-structure the data, as such we will:
+
+1. Pivot Longer to create a longer dataframe from teh side format moving the Year 
+   into a rows by Year and their values into a new column for emissions
+2. I want to split the Element into emissions type and the gas emitted
+3. Convert the Year to numeric
+
+```{r}
+emiss_tidy <- emiss_raw |>
+  pivot_longer(cols = 5:last_col(),
+               names_to = "Year",
+               values_to = "Emissions",
+               values_drop_na = TRUE) |>
+  # Here I am splitting element into the emission and gas types
+  separate(col = Element,
+           into = c("Emission_Type", "Gas_Type"),
+           sep = "\\(",
+           extra = "merge",
+           fill = "right") |>
+  # Re-ordering the columns and renaming some of them
+  select(Country = Area, 
+         Year, 
+         Emission_Source = Item, 
+         Emission_Type,
+         Gas_Type, 
+         Unit, 
+         Emissions) |>
+  # Cast the year as a number and remove ()
+  mutate(Year = as.numeric(Year),
+         Gas_Type = str_replace_all(Gas_Type, "[()]", ""))
+
+head(emiss_tidy)
+```
+
+Let us now import the data on population totals by country.
+```{r}
+pop_raw <- read.csv("https://raw.githubusercontent.com/william-forero/Data-607/refs/heads/main/API_SP.POP.TOTL_DS2_en_csv_v2_76253.csv")
+head(pop_raw)
+```
+
+The dataset is also untidy and wide in structure with columns for each year. Lets clean that up
+
+```{r}
+pop_tidy <- pop_raw |>
+  pivot_longer(cols = starts_with("X"),
+               names_to = "Year",
+               values_to = "Population") |>
+  mutate(Year = as.numeric(str_remove(Year,"^X"))) |>
+  rename(Country = Country.Name) |>
+  filter(Year >= 2000, Year <= 2020) |>
+  select(Country, Year, Population)
+
+head(pop_tidy)
+```
+
+Now lets merge the data from the emissions and population dataframes. For the purposes of this analysis we will only keep the rows where a match can be made, so we will be using an inner join.
+
+```{r}
+emiss_pop_data <- emiss_tidy |>
+  inner_join(pop_tidy, by = c("Country", "Year"))
+
+head(emiss_pop_data)
+```
+
+
+While reviewing the results, there are some rows that if groubed by everything except the last emissions column seem to be duplicates. This may have been from how the data was aggregated from multiple sources at the time the CSV was created. Below we can see some examples of the duplication.
+
+```{r}
+# Examples of duplicates
+emiss_dup <- emiss_pop_data |>
+  group_by(Country, Year, Emission_Source, Emission_Type, Gas_Type, Unit) |>
+  filter(n() > 1)
+
+head(emiss_dup)
+```
+
+We will combine the emissions amounts for those duplicate rows for the purpose of this assignment. 
+
+```{r}
+emiss_pop_data <- emiss_pop_data |>
+  group_by(Country, Year, Emission_Source, Emission_Type, Gas_Type, Unit, Population) |>
+  summarize(Emissions = sum(Emissions, na.rm = TRUE), .groups = "drop")
+
+head(emiss_pop_data)
+
+```
+
+Now we will create an emissions per capita column
+
+```{r}
+emiss_pop_data <- emiss_pop_data |>
+  mutate(Emissions_Per_Capita = round((Emissions) / Population, 2))
+
+head(emiss_pop_data)
+```
+
+
+
+### Data Analysis
+
+With such robust data we can look to answer many questions regarding Emissions. Here are some we seek to answer:
+
+Lets start with which single source of emissions contributed to the total emissions and which contributes the least?
+```{r}
+# Finding sources of the highest emissions
+emiss_pop_data |> 
+  group_by(Emission_Source) |>
+  summarise(Total_emiss_cap = round(sum(Emissions_Per_Capita, na.rm = TRUE),2),
+            .groups = "drop") |>
+  arrange(desc(Total_emiss_cap))
+```
+
+```{r}
+# Finding sources of the lowest emissions
+emiss_pop_data |> 
+  group_by(Emission_Source) |>
+  summarise(Total_emiss_cap = round(sum(Emissions_Per_Capita, na.rm = TRUE),2),
+            .groups = "drop") |>
+  arrange(Total_emiss_cap)
+```
+
+Which years had the highest overall emissions? and which had the lowest?
+```{r}
+# Finding year of the highest emissions
+emiss_pop_data |> 
+  group_by(Year) |>
+  summarise(Total_emiss_cap = round(sum(Emissions_Per_Capita, na.rm = TRUE),2),
+            .groups = "drop") |>
+  arrange(desc(Total_emiss_cap))
+```
+
+```{r}
+# Finding years of the lowest emissions
+emiss_pop_data |> 
+  group_by(Year) |>
+  summarise(Total_emiss_cap = round(sum(Emissions_Per_Capita, na.rm = TRUE),2),
+            .groups = "drop") |>
+  arrange((Total_emiss_cap))
+```
+
+Lets see which countries contribute the most overall emissions per capita and what their average and highest emissions are:
+```{r}
+emiss_pop_data |> 
+  group_by(Country) |>
+  summarise(Total_emiss_cap = round(sum(Emissions_Per_Capita, na.rm = TRUE),2),
+            Avg_emissions_per_capita = round(mean(Emissions_Per_Capita),2),
+            Highest_emission_per_capita = round(max(Emissions_Per_Capita),2),
+            Lowest_emission_per_capita = round(min(Emissions_Per_Capita),2),
+            .groups = "drop") |>
+  arrange(desc(Total_emiss_cap))
+```
+
+which gas type is emitted most?
+```{r}
+emiss_pop_data |> 
+  group_by(Gas_Type) |>
+  summarise(Total_emiss_cap = round(sum(Emissions_Per_Capita, na.rm = TRUE),2),
+            Avg_emissions_per_capita = round(mean(Emissions_Per_Capita),2),
+            Highest_emission_per_capita = round(max(Emissions_Per_Capita),2),
+            Lowest_emission_per_capita = round(min(Emissions_Per_Capita),2),
+            .groups = "drop") |>
+  arrange(desc(Total_emiss_cap))
+```
+
+Lets view the global emissions over the 20 years. 
+```{r}
+emiss_pop_data |>
+  group_by(Year,Gas_Type) |>
+  summarise(Total_emissions = sum(Emissions, na.rm = TRUE), 
+            .groups = "drop") |>
+  ggplot(aes(x = Year, 
+             y = Total_emissions,
+             color = Gas_Type,
+             group = Gas_Type)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Global Emissions 2000 - 2020",
+       x = "Year",
+       y = "Total Emissions",
+       color = "Gas_Type")
+```
+
+Further considerations:
+For future enhancements it would be helpful to know how the different emissions datasets were aggregated to create the kaggle dataset. By identifying the true cause of duplication we can better handle those rows. 
+
+The data is very nuanced, are there any ways that we can further group the data to draw some big picture takeaways? 
+
+Are there datasets we can use as a supplement in determining what may be the cause in increased or decreased emissions for the different gas types?
+
+
+
+
+
+
+
+
+
+
+
+
