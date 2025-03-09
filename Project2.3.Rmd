@@ -1,0 +1,173 @@
+---
+title: "Project 2.3"
+author: "Cindy Lin & William Forero"
+output: html_document
+---
+## Product Sales By Month
+
+This dataset contains the sales for different products by month and region. The raw dataset is untidy due to its wide format, providing different columns by month. If new data were to be entered we would need to alter its structure to add more months. Additionally in its current format we would need to give further consideration when adding data after a full year has passed and we begin to repeat months. 
+
+### Loading the data
+
+First we pull in the data in from its CSV file. 
+```{r}
+library(tidyverse)
+library(dplyr)
+
+sales_raw <- read.csv("https://raw.githubusercontent.com/william-forero/Data-607/refs/heads/main/product_sales_by_month.csv", 
+                      check.names = FALSE)
+
+head(sales_raw)
+```
+
+### Re-arranging the data
+
+We can pivot this longer to move the months into rows. 
+
+```{r}
+sales_tidy <- pivot_longer(data = sales_raw,
+                           cols = 3:last_col(),
+                           names_to = "Month",
+                           names_pattern = "(\\w+) Sales",
+                           values_to = "Sales") |>
+  rename(Product_Name = `Product Name`)
+
+head(sales_tidy)
+```
+
+We now have a more manageable dataframe that we would be able to use when adding in new information without needing to constantly change its structure.
+
+### Data Analysis
+
+Some analysis that we may want to explore:
+
+- Which product has the highest and lowest sales?
+- What trend do we see in sales totals across the months?
+- Which region is seeing the highest and lowest sales?
+
+Lets first look into the overall sales performance of the products.
+
+```{r}
+
+sales_tidy |>
+  group_by(Product_Name) |>
+  summarise(Total_Sales = sum(Sales, na.rm = TRUE),
+            Average_Sales = mean(Sales),
+            Max_Sales = max(Sales),
+            Min_Sales = min(Sales),
+            .groups = "drop") 
+```
+
+Product Sales Distribution
+```{r }
+sales_tidy %>%
+  group_by(Product_Name) %>%
+  summarise(Total_Sales = sum(Sales)) %>%
+  ggplot(aes(x = Product_Name, 
+                          y = Total_Sales, 
+                          fill = Product_Name)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Product Sales Distribution", x = "Product", y = "Total Sales") +
+  theme_minimal()
+
+```
+Product B had roughly 5000 total sales, Product A has a little over 4000 sales, and Product C has 2000 total sales.
+
+Takeaway:
+- Product B has the highest overall sales
+- Product C has the lowest overall sales
+
+Now lets put region into the mix. First we can look at the performance of each region overall, and then products by region. 
+
+```{r}
+
+# Sales performance by region
+sales_tidy |>
+  group_by(Region) |>
+  summarise(Total_Sales = sum(Sales, na.rm = TRUE),
+            Average_Sales = mean(Sales),
+            Max_Sales = max(Sales),
+            Min_Sales = min(Sales),
+            .groups = "drop") 
+```
+
+```{r}
+sales_tidy %>%
+  group_by(Region) %>%
+  summarise(Total_Sales = sum(Sales)) %>%
+  ggplot(aes(x = Region, 
+                          y = Total_Sales, 
+                          fill = Region)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Regional Sales Performance", x = "Region", y = "Total Sales") +
+  theme_minimal()
+```
+
+Takeaway:
+- The East region has the highest performing sales
+- The North region has the lowest performing sales
+
+```{r}
+# Sales performance by product and region
+sales_tidy |>
+  group_by(Region, Product_Name) |>
+  summarise(Total_Sales = sum(Sales, na.rm = TRUE),
+            Average_Sales = mean(Sales),
+            Max_Sales = max(Sales),
+            Min_Sales = min(Sales),
+            .groups = "drop") 
+```
+
+Takeaway:
+- Across all regions Product B has the best performance in each region and Product C has the worst performance in each region
+
+Lets start taking a look at how each product is performing month to month
+
+```{r}
+sales_tidy |>
+  group_by(Product_Name, Month) |>
+  summarise(Total_Sales = sum(Sales, na.rm = TRUE), 
+            .groups = "drop") |>
+  ggplot(aes(x = factor(Month, levels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun")), 
+             y = Total_Sales,
+             color = Product_Name,
+             group = Product_Name)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Monthly Sales by Product",
+       x = "Month",
+       y = "Total Sales",
+       color = "Product")
+```
+Takeaway:
+- We see that there are overall upward trends in sales for each of the three products across the months.
+
+
+```{r }
+ggplot(sales_tidy, aes(x=Region, y= Sales, color = Product_Name)) + geom_point(postion = "jitter")
+```
+Here we see that product A and B are relately close in sales for all 3 regions but for product C, the difference between the other two is greater. We can see the largest difference in East region. 
+
+
+```{r}
+sales_tidy |>
+  group_by(Product_Name, Month, Region) |>
+  summarise(Total_Sales = sum(Sales, na.rm = TRUE), 
+            .groups = "drop") |>
+  ggplot(aes(x = factor(Month, levels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun")), 
+             y = Total_Sales,
+             color = Product_Name,
+             group = Product_Name)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~ Region) +
+  labs(title = "Monthly Sales by Product",
+       x = "Month",
+       y = "Total Sales",
+       color = "Product")
+```
+
+Takeaway:
+- Regardless of whether the Product us the highest performing or lowest performing, each of the products have an upward trend
+- Each region also has an upward trend in sales
+- As we expected we see that all three of the products perform best in the East region and have lower performances in the North
