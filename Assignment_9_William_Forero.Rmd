@@ -1,0 +1,113 @@
+---
+title: "Assignment_9_WF"
+author: "William Forero"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+library(httr)
+library(jsonlite)
+library(tidyverse)
+```
+
+In an attempt to protect the API key I have set my system environment with the key under NYT_API, then I will use getenv to pull the key
+
+```{r}
+# Getting the API key and assigning it to a variable
+key <- Sys.getenv("NYT_API")
+```
+
+
+This is my api call to the NYT best sellers list hitory
+```{r}
+api_results <- GET(
+  url = "https://api.nytimes.com/svc/books/v3/lists/best-sellers/history.json",
+  query = list(
+    author = "John Green",
+    `api-key` = key
+  )
+)
+
+api_results
+```
+I am parsing the json data that is pulled from my api call
+```{r}
+json_results <- content(api_results, as = "parsed", simplifyVector = FALSE)
+
+```
+
+Then assigning those results below which will be used shortly by running it through a function which maps certain desired fields to their respective columns in my R dataframe
+```{r}
+john_green_res <- json_results$results
+```
+
+I am defining a function below that will pull in the different books John Green may have had on the list. 
+
+I am creating a total weeks on the list to see if the books ranked for multiple weeks or not. The highest rank pulls the min rank from the rank history since NYT ranks 1 being the best, or "highest" rank. If the book did not rank then there is an NA
+```{r}
+extract_books <- function(extract_book) {
+  tibble(
+    title = extract_book$title,
+    author = extract_book$author,
+    contributor = extract_book$contributor,
+    publisher = extract_book$publisher,
+    description = extract_book$description,
+    total_weeks_on_list = if (length(extract_book$ranks_history) > 0)
+      max(map_int(extract_book$ranks_history, "weeks_on_list"))
+    else NA,
+    highest_rank = if (length(extract_book$ranks_history) > 0)
+      min(map_int(extract_book$ranks_history, "rank"))
+    else NA,
+    lowest_rank = if (length(extract_book$ranks_history) > 0)
+      max(map_int(extract_book$ranks_history, "rank"))
+    else NA
+  )
+}
+```
+
+Here we see the mapped dataframe that results from running the api results through the function
+```{r}
+john_green_df <- map_df(john_green_res, extract_books)
+john_green_df
+```
+
+Here we can see that "The Anthropocene Reviewed" was John Greens book with the most weeks on the NYT bestseller list.
+```{r}
+longest_rank <- john_green_df |>
+  filter(!is.na(total_weeks_on_list) & total_weeks_on_list > 0) |>
+  select(title, 
+         author, 
+         contributor, 
+         publisher, 
+         total_weeks_on_list,
+         highest_rank,
+         lowest_rank) |>
+  arrange(desc(total_weeks_on_list))
+longest_rank
+```
+
+The book that placed at the highest rank however was "Everything is Tuberculosis"
+```{r}
+highest_rank <- john_green_df |>
+  filter(!is.na(highest_rank)) |>
+  select(title, 
+         author, 
+         contributor, 
+         publisher, 
+         total_weeks_on_list,
+         highest_rank,
+         lowest_rank) |>
+  arrange((highest_rank))
+highest_rank
+```
+
