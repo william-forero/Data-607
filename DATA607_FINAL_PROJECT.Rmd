@@ -1,0 +1,611 @@
+---
+title: "Financial Aids Influence on Graduation Rates"
+author: "William Forero"
+output: html_document
+---
+
+# 1 - Introduction
+
+Given the current uncertainty centered around the future of U.S Higher Education Financial Aid programs, it is appropriate to explore the relationship between the coverage of financial aid(percentage of students who receive aid) and the depth of financial aid (the amount of aid provided). One of the key metrics utilized for ascertaining an institutions "success" is graduation rate. Financial aid programs are generally offered with a purpose of bridging the gaps in access to higher education for students of different income levels.
+
+The data is sample of 1392 undergraduate degree granting public institutions located within the United States of America extracted from the 2022-2023 IPEDS survey. The observational study attempts to quantify the relationship between the precentage of students that receive financial aid and the average aid package awarded with an institutions graduation rate while accounting for variables including Pell Grant share, state, and institutions headcount.
+
+The result of the multiple linear regression model chosen explains about 55.5% of the variance observed in graduation rate. R\^2 = 55.5%, adjusted R\^2 53.7% and a standard error = 11.5%. Given the variables included, a \$1000 increase in the average grant award is associated with a 2.9 percentage‑point rise in the graduation rate. Expanding grant coverage by 10 percentage‑points predicts an additional 2 percentage‑point gain. A negative association is observed with Pell share and graduation rate. The model shows that both the percentage of students as well as the average aid package together while taking into consideration the rest of the variables, have a positive association with graduation rate.
+
+
+# 2 - Importing The Data
+
+```{r}
+library(tidyverse)
+```
+
+**Importing the financial aid data**
+
+```{r financial aid dataset}
+ipeds_fa2223 <- read.csv('https://raw.githubusercontent.com/william-forero/Data-607/refs/heads/main/sfa2223.csv')
+```
+
+How many rows and columns are included in the FA dataset?
+
+```{r fa shape}
+dim(ipeds_fa2223)
+```
+
+Takeaway: There are 5,563 rows and 691 columns included in the 22-23 IPEDS FA dataset
+
+What does the data look like?
+
+```{r}
+head(ipeds_fa2223,5)
+```
+
+**Importing the institutional characteristics**
+
+```{r inst char dataset}
+ipeds_inst2223 <- read.csv('https://raw.githubusercontent.com/william-forero/Data-607/refs/heads/main/hd2023.csv')
+```
+
+How many rows and columns are included in the Inst Characteristic Dataset?
+
+```{r}
+dim(ipeds_inst2223)
+```
+
+Takeaway: 6,163 rows and 73 columns in the 22-23 IPEDS Institutional Characteristic Dataset
+
+What does the data look like?
+
+```{r}
+head(ipeds_inst2223,5)
+```
+
+**Importing the graduation rate data**
+
+```{r grad rate dataset}
+ipeds_grad2223 <- read.csv('https://raw.githubusercontent.com/william-forero/Data-607/refs/heads/main/2223_IPEDS_CUSTOM_DATA_FILE.csv')
+```
+
+How many rows and columns are included in the Grad Rate Dataset?
+
+```{r}
+dim(ipeds_grad2223)
+```
+
+Takeaway: 1,563 rows and 38 columns in the 22-23 IPEDS Dataset
+
+
+# 3 - Cleaning The Data
+
+Using the data dictionary provided by IPEDS, I will first trim down each dataframe to the columns I intend to use for the project.
+
+**Trimming down the FA columns**
+
+Any counts below are for undergraduate, degree seeking students.
+
+```{r cleaning the FA dataset}
+fa_clean <- ipeds_fa2223 |> 
+  select(
+    UNITID,                        # Inst ID
+    tot_degr_ugrd    = SCUGDGSK,   # Tot Nbr Degr Seeking Ugrd
+    nbr_awd_any_aid  = UDGAGRNTN,  # Nbr Ugrd Degr Awarded Any Aid
+    tot_aid_awd      = UDGAGRNTT,  # Total aid awarded
+    nbr_awd_pell_aid = UDGPGRNTN,  # Nbr Stdnts awarded Pell Grant
+    tot_pell_awd     = UDGPGRNTT,  # Total Pell awarded
+    nbr_awd_loans    = UDGFLOANN,  # Nbr Stdnts awarded Loans
+    tot_loans_awd    = UDGFLOANT,  # Total Loans awarded
+     ) |>
+  mutate(
+    # Creating columns that show what percent of degree seeking undergraduate 
+    # students received each type of aid
+    perc_awd_any_aid = round(nbr_awd_any_aid  / tot_degr_ugrd , 2),
+    perc_awd_pell    = round(nbr_awd_pell_aid / tot_degr_ugrd , 2),
+    perc_awd_loans   = round(nbr_awd_loans    / tot_degr_ugrd , 2),
+    # Creating columns that show the average aid package a student received
+    avg_awd_any_aid  = round(tot_aid_awd      / nbr_awd_any_aid, 2),
+    avg_awd_pell     = round(tot_pell_awd     / nbr_awd_pell_aid, 2),
+    avg_awd_loans    = round(tot_loans_awd    / nbr_awd_loans, 2)
+  )
+head(fa_clean,5)
+```
+
+**Selecting the columns from the institutional characteristics**
+
+This table will later be used to with joins to limit which colleges are included in the model
+```{r cleaning inst char}
+inst_clean <- ipeds_inst2223 |> 
+  filter(
+    SECTOR    %in%   c(1, 4),   # To limit public 2 year and 4 year
+    OBEREG     !=    9,         # To filter out territories that are not the 50 states and DC
+    ICLEVEL   %in%   c(1, 2),   # Keep 2 and 4 year colleges
+    UGOFFER    ==     1,        # To limit that they offer undergraduate degrees
+    DEGGRANT   ==     1,        # Indicates the inst is degr granting
+    OPENPUBL   ==     1         # Denotes the college is open to the public
+  ) |>
+  select(
+    UNITID,
+    name       =      INSTNM,
+    state      =      STABBR,
+    sector     =      SECTOR  
+  ) |>
+  # This will make it easier to interpret the values 
+  mutate(sector = case_when(
+      sector == 1 ~ "Public, 4‑Year",
+      sector == 4 ~ "Public, 2‑Year"
+    ))
+
+head(inst_clean,5)
+```
+
+**Cleaning the graduation rate dataset**
+```{r cleaning grad rate}
+grad_clean <- ipeds_grad2223 |>
+  select(
+    unitid,
+    tot_grad_rt = `DRVGR2023.Graduation.rate..total.cohort`
+  ) |>
+  mutate(
+    # convert 0–100 percentages → 0–1 proportions which matches what was done in FA
+    tot_grad_rt = tot_grad_rt / 100
+  ) |>
+  filter(
+    !is.na(tot_grad_rt)
+  )
+
+head(grad_clean,5)
+```
+
+Now the tables should be joined to create a comprehensive dataset for our regression model
+```{r joining data}
+full_data <- inst_clean |>
+  inner_join(grad_clean, by = c("UNITID" = "unitid")) |>
+  inner_join(fa_clean,   by = "UNITID")
+
+head(full_data)
+```
+
+
+what shape did the combined data take?
+```{r}
+dim(full_data)
+```
+There are 1,536 rows and 18 columns
+
+What do the variables look like?
+```{r}
+summary(full_data)
+```
+
+
+Below I do a check to see if there are NAs in the newly combined dataset
+```{r checking for missing data}
+missing_summary <- full_data |>
+  summarise(across(everything(), ~sum(is.na(.)))) |>
+  pivot_longer(everything(),
+               names_to  = "variable",
+               values_to = "n_missing") |>
+  mutate(pct_missing = round(100 * n_missing / nrow(full_data), 2)) |>
+  filter(pct_missing > 0) |>
+  arrange(desc(pct_missing))
+
+missing_summary
+```
+
+Are these just colleges where no loans were awarded? 
+```{r}
+full_data |> 
+  filter(is.na(avg_awd_loans)) |>               
+  summarise(
+    all_zero = all(nbr_awd_loans == 0 | is.na(nbr_awd_loans)),
+    min_tot_loans = min(tot_loans_awd, na.rm = TRUE),
+    max_tot_loans = max(tot_loans_awd, na.rm = TRUE)
+  )
+```
+
+This presents a challenge because we hit a point where we must decide whether to impute values or delete the rows. To simply replace these values with $0 may bias the analysis as the fact the loan column was NA could be an indication that these colleges do not offer loans, this is an indication of access to loans. Deleting these rows however also introduces its own bias as now I am limiting the analysis to colleges that offered loans. What I will do is create a variable for "offered_loans" and then replace these missing values with 0.
+```{r missing loan treatment}
+full_data <- full_data %>%
+  mutate(
+    offered_loans     = nbr_awd_loans > 0,
+    avg_awd_loans = if_else(offered_loans,
+                            tot_loans_awd / nbr_awd_loans,
+                            0)
+  )
+head(full_data,5)
+```
+
+Now we run the missing value check again, and see that we have handled the missing values.
+```{r}
+missing_summary <- full_data |>
+  summarise(across(everything(), ~sum(is.na(.)))) |>
+  pivot_longer(everything(),
+               names_to  = "variable",
+               values_to = "n_missing") |>
+  mutate(pct_missing = round(100 * n_missing / nrow(full_data), 2)) |>
+  filter(pct_missing > 0) |>
+  arrange(desc(pct_missing))
+
+missing_summary
+```
+
+
+# 4 - Exploratory Data Analysis
+
+Now I want to dive into what kind of story this data tells. 
+
+To start off, what kind of information do we see at the sector level? 2-Year vs 4-Year
+```{r}
+sector_summary <- full_data |>
+  group_by(sector) |>             
+  summarise(
+    nbr_colleges = n(), 
+    avg_fin_aid_pkg  = round(mean(avg_awd_any_aid, na.rm = TRUE),2),
+    med_fin_aid_pkg  = round(median(avg_awd_any_aid, na.rm = TRUE),2),
+    avg_grad_rate = round(mean(tot_grad_rt,na.rm = TRUE),2),
+    med_grad_rate = round(median(tot_grad_rt,na.rm = TRUE),2)
+  )
+
+sector_summary
+```
+Takeaway: There are 36 more 2-Year institutions included in the data. 4-Year colleges on average award more in aid pakcages to a student, and have a higher graduation rate
+
+**What are the 5 colleges that provide aid to the most students (% of students offered any aid)?**
+```{r}
+full_data |>
+  select(UNITID, name,tot_degr_ugrd,tot_grad_rt, perc_awd_any_aid,avg_awd_any_aid) |>
+  arrange(desc (perc_awd_any_aid),desc(avg_awd_any_aid)) |>
+  slice_head(n = 5) 
+```
+
+We see that there are colleges where 100% of the students included in the 2023 data were awarded some type of aid. This is interesting because it raises the question of whether these are true outliers, data errors, or just a representation of reality. It also points out a limitation of the data, as its possible that the aid being provided is loans or unique institutional scholarships. I will be removing the college where only 23 students were reported for the college as the sample size seems too small and their 100% of students receiving aid can skew the data. 
+
+
+```{r}
+full_data <- full_data |>
+  filter(UNITID != 215309)
+```
+
+
+**What are the 5 colleges that provide aid to the least students (% of students offered any aid)?**
+```{r}
+full_data |>
+  select(UNITID, name,tot_degr_ugrd,tot_grad_rt, perc_awd_any_aid,avg_awd_any_aid) |>
+  arrange(perc_awd_any_aid,avg_awd_any_aid) |>
+  slice_head(n = 5) 
+```
+
+**What are the 5 colleges that provided the most average $ amount in aid packaged to a student?**
+```{r}
+full_data |>
+  select(UNITID, name,tot_degr_ugrd,tot_grad_rt, perc_awd_any_aid,avg_awd_any_aid) |>
+  arrange(desc(avg_awd_any_aid),desc(perc_awd_any_aid)) |>
+  slice_head(n = 5) 
+```
+
+
+**What are the 5 colleges that provided the least average $ amount in aid packaged to a student?**
+```{r}
+full_data |>
+  select(UNITID, name,tot_degr_ugrd,tot_grad_rt, perc_awd_any_aid,avg_awd_any_aid) |>
+  arrange(avg_awd_any_aid,perc_awd_any_aid) |>
+  slice_head(n = 5) 
+```
+
+**What can we tell about the data at the state level**
+
+What 5 states have the most colleges present?
+```{r}
+# The 5 states with the most number of colleges included
+
+state_summary <- full_data |>
+  group_by(state) |>             
+  summarise(
+    nbr_colleges = n(), 
+    avg_fin_aid_pkg  = round(mean(avg_awd_any_aid, na.rm = TRUE),2),
+    med_fin_aid_pkg  = round(median(avg_awd_any_aid, na.rm = TRUE),2),
+    avg_grad_rate    = round(mean(tot_grad_rt,na.rm = TRUE),2),
+    med_grad_rate    = round(median(tot_grad_rt,na.rm = TRUE),2)
+  ) |>
+  arrange(desc(nbr_colleges))  
+
+head(state_summary,5)
+```
+
+
+```{r}
+# The 5 states with the least amount of colleges included
+head(state_summary |> arrange(nbr_colleges),5)
+```
+
+```{r}
+# The 5 states with the most amount of aid awarded to a student on average
+head(state_summary |> arrange(desc(avg_fin_aid_pkg)),5)
+```
+
+```{r}
+# The 5 states with the least amount of aid awarded to a student on average
+head(state_summary |> arrange(avg_fin_aid_pkg),5)
+```
+
+## 4.1 - Univariate Analysis
+
+I want to see the distributions of the variables I have included in the full data. I will look at the distributions for the dependent variable (grad rate), the columns that represent the share of students meeting a condition, and the average aid awarded. I am not as interested in just the count of students or the total sum of aid at a college as it does not tell as complete a story as the percents do. The proportion of students receiving aid takes into consideration the total number of students and the number of students receviing aid by college.
+
+```{r Nbr Degr Stdnts Distribution}
+ggplot(full_data, aes(x = tot_degr_ugrd)) +
+  geom_histogram(bins = 35,  
+                 fill = "steelblue", colour = "white") +
+  labs(title = "Distribution of Degree Seeking Undergraduate Students",
+       x = "Students",
+       y = "Number of colleges") +
+  theme_minimal()
+```
+There is a natural floor to the number of students since there cannot be less than 0 students seeking an undergraduate degree at a college. The variable is heavily right skewed which can impact the performance of the model so we will apply a log transformation. 
+
+```{r}
+ggplot(full_data, aes(x = log10(tot_degr_ugrd))) +
+  geom_histogram(bins = 50,  
+                 fill = "steelblue", colour = "white") +
+  labs(title = "Distribution of Degree Seeking Undergraduate Students",
+       x = "Students (log)",
+       y = "Number of colleges") +
+  theme_minimal()
+```
+We see that this now takes on a more normal distrubution bell like shape. we will add a column for the log value
+
+
+Then we look at how the dependent variable is distributed, the graduation rate.
+Graduation rate is slightly right skewed, but is generally bell shaped
+```{r Total Grad Rt Distribution}
+ggplot(full_data, aes(x = tot_grad_rt)) +
+  geom_histogram(bins = 35,  
+                 fill = "steelblue", colour = "white") +
+  labs(title = "Distribution of Graduation Rate",
+       x = "Graduation Rate (percentage)",
+       y = "Number of colleges") +
+  theme_minimal()
+```
+
+
+
+We have natrual ceilings and floors as you cannot offer less than 0 % of students aid, and you cannot give more than 100% of your students aid. The shape is roughly bell shaped with a left skew
+```{r Percent of students receiving any aid}
+ggplot(full_data, aes(x = perc_awd_any_aid)) +
+  geom_histogram(bins = 35,  
+                 fill = "steelblue", colour = "white") +
+  labs(title = "Distribution of Share of Students Receiving Any Aid",
+       x = "Receives Any Aid (percentage)",
+       y = "Number of colleges") +
+  theme_minimal()
+```
+
+We have a nearly normal bell shape forming for this distribution of percent of students receiving pell
+```{r Percent of students receiving pell}
+ggplot(full_data, aes(x = perc_awd_pell)) +
+  geom_histogram(bins = 35,  
+                 fill = "steelblue", colour = "white") +
+  labs(title = "Distribution of Share of Students Receiving Pell",
+       x = "Receives Pell (percentage)",
+       y = "Number of colleges") +
+  theme_minimal()
+```
+
+The percent share of loans has a heavy right skew and a large proportion at 0. This is something that will be worth taking into consideration as we build the model. It may turn out to be a characteristic that should be evaluated seperately and out of the scope of this analysis. 
+```{r Percent of students receiving loans}
+ggplot(full_data, aes(x = perc_awd_loans)) +
+  geom_histogram(bins = 35,  
+                 fill = "steelblue", colour = "white") +
+  labs(title = "Distribution of Share of Students Receiving Loans",
+       x = "Receives Loans (percentage)",
+       y = "Number of colleges") +
+  theme_minimal()
+```
+
+The data are generally right skewed, however we cannot just delete them as they may be indications of the real world and not errors. It is possible that the colleges have high cost of attendance and offer more scholarships to balance out the cost.
+```{r}
+full_data |>
+  select(unitid = UNITID,
+         avg_any_aid  = avg_awd_any_aid,
+         avg_pell     = avg_awd_pell,
+         avg_loans    = avg_awd_loans) |>
+  pivot_longer(
+    cols      = starts_with("avg_"),             
+    names_to  = "award_type",
+    values_to = "amount"
+  ) |>
+  ggplot(aes(x = award_type,
+             y = amount,
+             fill = award_type)) +
+  geom_boxplot(width = .5, outlier.colour = "red") +
+  labs(title = "Distribution of Average Awards per Recipient",
+       x = NULL, y = "Amount (USD)") +
+
+  theme_minimal(base_size = 13)
+```
+
+
+
+## 4.2 - Multivariate Analysis
+
+What relationship can be observed between the share of students receiving any aid and graduation rate?
+We do not see a very strong linear relationship between the proportion of students receiving aid and the graduation rate
+```{r}
+ggplot(data = full_data, aes(x = perc_awd_any_aid, y = tot_grad_rt)) +
+  geom_jitter() +
+  stat_smooth(method = "lm", se = FALSE) +
+  labs(title = "Percent Stdnts Awarded vs Graduation Rate",
+       x = "Students Awarded (percentage)",
+       y = "Graduation Rate") +
+  theme_minimal()
+```
+
+
+What relationship can be observed between the average aid students received and graduation rate?
+Here we see a much stronger positive trending relationship between the two variables
+```{r}
+ggplot(data = full_data, aes(x = avg_awd_any_aid, y = tot_grad_rt)) +
+  geom_jitter() +
+  stat_smooth(method = "lm", se = FALSE) +
+  labs(title = "Avg Aid Awarded vs Graduation Rate",
+       x = "Avg Aid Awarded",
+       y = "Graduation Rate") +
+  theme_minimal()
+```
+
+
+```{r}
+
+final_data <- full_data |>
+  select(sector,state,tot_grad_rt,tot_degr_ugrd,perc_awd_any_aid,avg_awd_pell,avg_awd_loans,avg_awd_any_aid,perc_awd_pell,perc_awd_loans) |>
+  filter(!is.na(avg_awd_loans)) |>
+  transmute(
+    sector,
+    state,
+    tot_grad_rt,
+    perc_awd_any_aid,
+    perc_awd_pell,
+    perc_awd_loans,
+    avg_aid     = avg_awd_any_aid / 1000,
+    avg_pell    = avg_awd_pell / 1000,
+    avg_loans   = avg_awd_loans / 1000,
+    log_tot_ugrd = log10(tot_degr_ugrd)
+  )
+
+head(final_data,5)
+```
+
+```{r}
+library(GGally)
+
+corr_vars <- final_data |>
+  select(
+    tot_grad_rt,
+    log_tot_ugrd,
+    perc_awd_any_aid,
+    perc_awd_pell,
+    perc_awd_loans,
+    avg_aid,
+    avg_pell,
+    avg_loans
+  )
+
+GGally::ggpairs(corr_vars)
+```
+
+
+# 5 - Regression Modeling
+
+I first want to explore some simple linear regressions with the share of students receiving any aid (% of students) vs grad rate, and the depth of aid (average amount of aid recevied) vs grad rate. 
+
+
+```{r}
+ipeds_lm_1 <- lm(tot_grad_rt ~ perc_awd_any_aid, data = final_data)
+summary(ipeds_lm_1)
+```
+
+The R-squared value is near 0
+This model is generally not a great predictor for graduation rate
+
+
+```{r}
+ipeds_lm_2 <- lm(tot_grad_rt ~ avg_aid, data = final_data)
+summary(ipeds_lm_2)
+```
+This model is a much better fit than the previous model. 
+The R-squared value went up to .316, where we can estiamte that about 31% of the variance in graduation rate is explained by the average amount of aid. Based on this model we would expect that an increase in $1000 of aid on average would be associated with about 3.1 percentage point gain in graduation rate.
+
+Next I want to move onto exploring some multiple linear regression models. 
+
+```{r}
+ipeds_lm_3 <- lm(tot_grad_rt ~ perc_awd_any_aid + avg_aid + sector + state + log_tot_ugrd + perc_awd_pell + perc_awd_loans, data = final_data)
+summary(ipeds_lm_3)
+```
+We have a statistically significant P-Value, and increased the R-Squared value to .557, the model explains about 55.7% of the variance in graduation rate. 
+
+After controlling for sector, state, school size, and other aid metrics, every $1 000 increase in the average aid package predicts ~2.8 percentage-points higher graduation rates, while a larger share of Pell recipients predicts lower rates (–5.4 pp per 10 pp), and boosting the overall share of students who receive any aid still confers a modest positive benefit (~1.9 pp per 10 pp).
+
+
+I will remove a variable, starting with the percent of students that receive loans. 
+```{r}
+ipeds_lm_4 <- lm(tot_grad_rt ~ perc_awd_any_aid + avg_aid + sector + state + log_tot_ugrd + perc_awd_pell , data = final_data)
+summary(ipeds_lm_4)
+```
+We do not see a major change in the R-Squared value, and still have a statistically significant model, while trimming down on the features included. 
+
+
+Next I will trim down on the sector
+```{r}
+ipeds_lm_5 <- lm(tot_grad_rt ~ perc_awd_any_aid + avg_aid + state + log_tot_ugrd + perc_awd_pell , data = final_data)
+summary(ipeds_lm_5)
+```
+
+```{r}
+car::vif(ipeds_lm_5)
+```
+
+What happens if the state is removed? Can we compare the with and without models using an anova?
+```{r}
+ipeds_lm_6 <- lm(
+  tot_grad_rt ~ perc_awd_any_aid + avg_aid +
+                log_tot_ugrd + perc_awd_pell,
+  data = final_data
+)
+summary(ipeds_lm_6)
+```
+
+```{r}
+car::vif(ipeds_lm_6)
+```
+
+
+```{r}
+anova(ipeds_lm_6, ipeds_lm_5)
+```
+
+Based on the Anova results, the state variable captures significant unique signal, so it would be better to keep the state included.
+
+
+# 6 - Model Diagnostics
+
+Below we plot the residuals of the model in a historgram and observe that there are nearly normal residuals. This assumption is satisfied. 
+```{r residuals distribution}
+ggplot(data = ipeds_lm_5, aes(x = .resid)) +
+  geom_histogram(bins = 25) +
+  xlab("Residuals")
+```
+
+Most of our residuals below fall on a line, and are nearly normal, however we do see for some values on both extremes a tail that trails off. The model may not be as reliable when handling those extreme values. 
+```{r}
+ggplot(data = ipeds_lm_5, aes(sample = .resid)) +
+  stat_qq()
+```
+
+Here we do not see any major patterns but there are observed outliers again and a denser cloud around .3 - .5. The assumption is mildly violated but generally still seems to hold. It may be worth looking into this further in future analysis.
+```{r}
+ggplot(data = ipeds_lm_5, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  xlab("Fitted values") +
+  ylab("Residuals")
+```
+
+
+# 7 - Conclusions
+
+
+The final model chosen uses the proportion of students awarded any aid, the average aid amount by student, the percent of students that receive Pell, the state of the college, and the total number of students as predictors for the colleges total graduation rate. 
+
+The model produced an R-Squared value of .555 with a signiifcant p-value. About 55.5% of the variance is explained. 
+
+For every $1000 increase in the average aid awarded, it is expected that the graduation rate would rise 2.9 percentage points.
+
+For every 10 percentage point increase in proportion of students that recevive aid attributes to 2 percentage point gain in graduation rate.
+
+Interestingly enough we observe a drop of 5.4 percentage points when the percent of pell recipients increases 10 percentage points
+
+Overall, the breadth of aid (proportion of students awarded) along with the depth (average aid package amount) are strongly associated with student success(graduation rate) when factoring in State effects, proportion of pell recipients, and student count.
+
+
+
+# 8 - Further Considerations
+
+It is important to note that there can be underlying factors which are influencing the results, such as net price, types of aid offered (Predominantly private scholarships, state aid, institutional scholarships? etc), admissions criteria and more that may better explain fluctuations in graduation rate. Further considerations may also be given to the data itself, are the outliers a result of error or do they truly represent the real world? What types of events may have influenced the data, for example would the years reported have accounted for any aid provided to aid with pandemic related issues, are the admissions or enrollment data influenced by post pandemic effects?
